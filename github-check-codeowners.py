@@ -7,8 +7,9 @@ import argparse
 from github import Github
 
 # === Configuration ===
-GITHUB_TOKEN = os.getenv("GH_TOKEN")  # Use GH_TOKEN as per your setup
-ORG_NAME = "YOUR_ORG_NAME"  # Replace with your actual org name
+GITHUB_TOKEN = os.getenv("GH_TOKEN")  # Token with REPO:Admin permissions
+ORG_NAME = "YOUR_ORG_NAME"  # Organisation to check
+verbose = True;
 
 # === Initialization ===
 if not GITHUB_TOKEN:
@@ -71,28 +72,34 @@ def has_write_access(repo, owner):
             return False
 
 def check_repo_codeowners(repo):
-    if repo.archived:
+    if repo.archived and verbose:
         print(f"⏭️  Skipping archived repo: {repo.full_name}")
         return
 
-    print(f"🔍 Checking repository: {repo.full_name}")
+    if verbose:
+        print(f"🔍 Checking repository: {repo.full_name}") 
     content = get_codeowners_file(repo)
     if not content:
-        print("  ❌ CODEOWNERS file not found.")
+        print(f"  ❌ CODEOWNERS file not found for {repo.full_name}.")
         return
 
     rules = parse_codeowners(content)
     for path, owners in rules:
         for owner in owners:
             if not has_write_access(repo, owner):
-                print(f"  ⚠️  {owner} does NOT have write access for {path}")
+                print(f"  ⚠️  {owner} does NOT have write access for {repo.full_name}/{path}")
 
 # === Main ===
 
 def main():
+    global verbose
     parser = argparse.ArgumentParser(description="Check CODEOWNERS status in GitHub repositories.")
     parser.add_argument("--repo", help="Specify a single repository to check (format: org/repo)")
+    parser.add_argument("-q", "--quiet", help="Only print findings", action="store_true")
     args = parser.parse_args()
+
+    if args.quiet:
+        verbose = False
 
     if args.repo:
         try:
@@ -101,9 +108,11 @@ def main():
         except Exception as e:
             print(f"❌ Could not load repository {args.repo}: {e}")
     else:
-        print(f"📦 Checking all repositories in organization '{ORG_NAME}'...")
+        if verbose:
+            print(f"📦 Checking all repositories in organization '{ORG_NAME}'...")
         for repo in org.get_repos():
             check_repo_codeowners(repo)
 
 if __name__ == "__main__":
     main()
+
