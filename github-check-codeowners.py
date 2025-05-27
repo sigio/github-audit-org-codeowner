@@ -1,5 +1,8 @@
 #!/bin/env python3
 
+# SPDX-License-Identifier: WTFPL OR 0BSD OR EUPL-1.2
+# Created by Mark Janssen / Sig-I/O with some AI assistance
+
 import re
 import os
 import sys
