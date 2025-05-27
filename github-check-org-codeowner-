@@ -2,31 +2,33 @@
 
 import re
 import os
+import sys
+import argparse
 from github import Github
-import requests
 
 # === Configuration ===
-GITHUB_TOKEN = os.getenv("GH_TOKEN")  # Set this in your environment
-ORG_NAME = "minvws"
+GITHUB_TOKEN = os.getenv("GH_TOKEN")  # Use GH_TOKEN as per your setup
+ORG_NAME = "YOUR_ORG_NAME"  # Replace with your actual org name
 
 # === Initialization ===
+if not GITHUB_TOKEN:
+    print("❌ GH_TOKEN environment variable not set.")
+    sys.exit(1)
+
 g = Github(GITHUB_TOKEN)
 org = g.get_organization(ORG_NAME)
 
-# CODEOWNERS possible paths
 CODEOWNERS_PATHS = [
     ".github/CODEOWNERS",
     "CODEOWNERS",
     "docs/CODEOWNERS"
 ]
 
-# Regex to parse CODEOWNERS lines
 CODEOWNERS_LINE_REGEX = re.compile(r"^(\S+)\s+(.+)$")
 
-# === Helper Functions ===
+# === Functions ===
 
 def get_codeowners_file(repo):
-    """Find and return the CODEOWNERS file content from a repo."""
     for path in CODEOWNERS_PATHS:
         try:
             contents = repo.get_contents(path)
@@ -36,7 +38,6 @@ def get_codeowners_file(repo):
     return None
 
 def parse_codeowners(content):
-    """Parse CODEOWNERS content into a list of (path, owners)."""
     rules = []
     for line in content.splitlines():
         line = line.strip()
@@ -50,27 +51,31 @@ def parse_codeowners(content):
     return rules
 
 def has_write_access(repo, owner):
-    """Check if a user/team has write access."""
     if owner.startswith("@"):
         owner = owner[1:]
 
-    if "/" in owner:  # team
-        team_name = owner.split("/")[-1]
+    if "/" in owner:
+        team_slug = owner.split("/")[-1].lower()
         try:
-            team = org.get_team_by_slug(team_name)
-            return team.get_repo(repo).permissions.push
-        except:
-            return False
-    else:  # user
+            for team in repo.get_teams():
+                if team.slug.lower() == team_slug:
+                    return team.permission in ["admin", "push"]
+        except Exception as e:
+            print(f"    ⚠️ Error checking team '{team_slug}': {e}")
+        return False
+    else:
         try:
-            collaborator = repo.get_collaborator_permission(owner)
-            return collaborator in ['write', 'admin']
+            permission = repo.get_collaborator_permission(owner)
+            return permission in ["write", "admin"]
         except:
             return False
 
 def check_repo_codeowners(repo):
-    """Check CODEOWNERS validity for a repo."""
-    print(f"Checking repository: {repo.full_name}")
+    if repo.archived:
+        print(f"⏭️  Skipping archived repo: {repo.full_name}")
+        return
+
+    print(f"🔍 Checking repository: {repo.full_name}")
     content = get_codeowners_file(repo)
     if not content:
         print("  ❌ CODEOWNERS file not found.")
@@ -82,13 +87,23 @@ def check_repo_codeowners(repo):
             if not has_write_access(repo, owner):
                 print(f"  ⚠️  {owner} does NOT have write access for {path}")
 
-# === Main Execution ===
+# === Main ===
 
 def main():
-    print(f"Checking all repositories in organization '{ORG_NAME}'...")
-    for repo in org.get_repos():
-        check_repo_codeowners(repo)
+    parser = argparse.ArgumentParser(description="Check CODEOWNERS status in GitHub repositories.")
+    parser.add_argument("--repo", help="Specify a single repository to check (format: org/repo)")
+    args = parser.parse_args()
+
+    if args.repo:
+        try:
+            repo = g.get_repo(args.repo)
+            check_repo_codeowners(repo)
+        except Exception as e:
+            print(f"❌ Could not load repository {args.repo}: {e}")
+    else:
+        print(f"📦 Checking all repositories in organization '{ORG_NAME}'...")
+        for repo in org.get_repos():
+            check_repo_codeowners(repo)
 
 if __name__ == "__main__":
     main()
-
